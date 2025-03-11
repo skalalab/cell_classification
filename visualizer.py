@@ -32,5 +32,8 @@ def visualize_sdt(file):
 def visualize_cells(cells):
     for cell in cells:
         plt.imshow(np.sum(cell[1], axis=2))
-        plt.title("Cell{}".format(str(cell[0])))
+        plt.title("Cell_Cropped{}".format(str(cell[0])))
+        plt.show()
+        plt.imshow(np.sum(cell[2], axis=2))
+        plt.title("Cell_Original{}".format(str(cell[0])))
         plt.show()
