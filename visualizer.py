@@ -5,9 +5,12 @@ Created on Mon Mar 10 14:24:18 2025
 @author: chris
 """
 
+from glob import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import sdt_reader as sdt
+import tifffile as tiff
+from pathlib import Path
 
 # intensity graph of sdt file
 #
@@ -28,12 +31,13 @@ def visualize_sdt(file):
             plt.show()
             
             
-# visualize cells
-def visualize_cells(cells):
-    for cell in cells:
-        plt.imshow(np.sum(cell[1], axis=2))
-        plt.title("Cell_Cropped{}".format(str(cell[0])))
-        plt.show()
-        plt.imshow(np.sum(cell[2], axis=2))
-        plt.title("Cell_Original{}".format(str(cell[0])))
-        plt.show()
+# # visualize cells
+# def visualize_cells(folder):
+#     for cell in glob(folder + "/*.tif"):
+#         with tiff.TiffFile(cell) as tif:
+#             image = tif.asarray()
+        
+#         plt.imshow(np.sum(image, axis=2))
+#         plt.title(Path(cell).name[:-4])
+#         plt.show()
+        

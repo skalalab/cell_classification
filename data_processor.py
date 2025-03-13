@@ -12,6 +12,16 @@ import os
 from pathlib import Path
 import visualizer
 import math
+import random
+
+# information for cell
+class Cell():
+    def __init__(self, value, image, activation, name):
+        self.value = value
+        self.image = image
+        self.activation = activation
+        self.name = name
+
 
 # split sdt into single cropped cells
 def split_sdt(sdt, mask): 
@@ -62,40 +72,70 @@ def split_sdt(sdt, mask):
                     if col > right:
                         right = col
                 
-        cropped_image = cell_image[upper:lower+1, left:right+1, :]    
-        cell_images.append([cell_value, cropped_image, cell_image])
+        cropped_image = cell_image[upper:lower+1, left:right+1, :]
+        
+        # create Cell for this cell
+        name = Path(sdt).name[:-4]
+        activation = "act" in name
+        cell_images.append(Cell(cell_value, cropped_image, activation, name))
     
-    return cell_images
+    return cell_images    
 
-
-# pad cells
-def pad_cells(cells):
+# get max size
+def max_size(cells):
     # get largest dimension as size
-    cells.sort(key=lambda x: max(x[1].shape[0], x[1].shape[1]), reverse=True)
-    size = max(cells[0][1].shape[0], cells[0][1].shape[1])
+    cells.sort(key=lambda x: max(x.image.shape[0], x.image.shape[1]), reverse=True)
+    size = max(cells[0].image.shape[0], cells[0].image.shape[1])
     
     # make size even
     if size % 2 != 0:
         size += 1
-    
+        
+    return size
+
+
+# pad cells
+def pad_cells(cells, size):
     # pad all images to be size x size
     for cell in cells:
-        vert_padding = size - cell[1].shape[0]
-        side_padding = size - cell[1].shape[1]
-        cell[1] = np.pad(cell[1], ((math.floor(vert_padding/2),math.ceil(vert_padding/2)), (math.floor(side_padding/2),math.ceil(side_padding/2)), (0, 0)), 'constant')   
+        vert_padding = size - cell.image.shape[0]
+        side_padding = size - cell.image.shape[1]
+        cell.image = np.pad(cell.image, ((math.floor(vert_padding/2),math.ceil(vert_padding/2)), (math.floor(side_padding/2),math.ceil(side_padding/2)), (0, 0)), 'constant')   
     
 
 
 # # save cells to folder
-def save_cells(cells, output):
-    for cell in cells:
-        tiff.imwrite(output + "cell{}.tif".format(str(cell[0])), cell[1])
-
-# run
-output_path = "Images/" 
-if not os.path.exists(output_path):
-    os.makedirs(output_path)   
+def save_cells(cells, output): 
     
-cells = split_sdt("Tcells-001.sdt", "Cell_mask_01.tif")
-pad_cells(cells)
-visualizer.visualize_cells(cells)
+    # create output folder
+    if not os.path.exists(output):
+        os.makedirs(output)
+        
+    # make label csv
+    with open(output + "labels.csv", "w") as labels:
+        for cell in cells:
+            tiff.imwrite(output + "/{}_cell{}.tif".format(cell.name, str(cell.value)), cell.image)
+            labels.write("{}_cell{}.tif, {}\n".format(cell.name, str(cell.value), cell.activation))
+
+
+# process
+
+random.seed(10)
+active = split_sdt("Images/active.sdt", "Images/active.tif")
+quiescent = split_sdt("Images/quiescent.sdt", "Images/quiescent.tif")
+random.shuffle(active)
+random.shuffle(quiescent)
+
+active_split_ind = math.floor((len(active) / 5))
+quiescent_split_ind = math.floor((len(quiescent) / 5))
+
+test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
+train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
+
+size = max(max_size(test), max_size(train))
+
+pad_cells(test, size)
+pad_cells(train, size)
+
+save_cells(test, "Images/Test")
+save_cells(train, "Images/Train")
