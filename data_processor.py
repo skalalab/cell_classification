@@ -112,7 +112,8 @@ def save_cells(cells, output):
         os.makedirs(output)
         
     # make label csv
-    with open(output + "labels.csv", "w") as labels:
+    with open(output + "/labels.csv", "w") as labels:
+        labels.write("cell_image, cell_label\n")
         for cell in cells:
             tiff.imwrite(output + "/{}_cell{}.tif".format(cell.name, str(cell.value)), cell.image)
             labels.write("{}_cell{}.tif, {}\n".format(cell.name, str(cell.value), cell.activation))

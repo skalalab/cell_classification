@@ -31,13 +31,14 @@ def visualize_sdt(file):
             plt.show()
             
             
-# # visualize cells
-# def visualize_cells(folder):
-#     for cell in glob(folder + "/*.tif"):
-#         with tiff.TiffFile(cell) as tif:
-#             image = tif.asarray()
+# visualize cells
+def visualize_cells(folder):
+    for cell in glob(folder + "/*.tif"):
+        with tiff.TiffFile(cell) as tif:
+            image = tif.asarray()
         
-#         plt.imshow(np.sum(image, axis=2))
-#         plt.title(Path(cell).name[:-4])
-#         plt.show()
+        plt.imshow(np.sum(image, axis=2))
+        plt.title(Path(cell).name[:-4])
+        plt.show()
+        
         

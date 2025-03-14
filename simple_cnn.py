@@ -17,37 +17,128 @@ import random
 from torch.utils.data import Dataset
 import pandas as pd
 import tifffile as tiff
+import numpy as np
+from torchvision.transforms import ToTensor
 
 class CellDataset(Dataset):
-    def __init__(self, annotations_file, img_dir):
+    def __init__(self, annotations_file, img_dir, transform):
         self.img_labels = pd.read_csv(annotations_file)
         self.img_dir = img_dir
+        self.transform = transform
         
     def __len__(self):
         return len(self.img_labels)
     
     def __getitem__(self, idx):
-        img_path = self.image_dir + "/" + self.img_labels.iloc[idx, 0]
+        img_path = self.img_dir + "/" + self.img_labels.iloc[idx, 0]
         
         with tiff.TiffFile(img_path) as tif:
-            image = torch.to_tensor(tif.asarray())
+            image = self.transform(tif.asarray().astype(np.uint8)).unsqueeze(0)
             
-        label = self.img_labels.iloc[idx, 1]
-        
+        label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
+n_epochs = 3
+batch_size_train = 24
+batch_size_test = 48    
+learning_rate = 0.01
+momentum = 0.5
+log_interval = 10
 
-batch_size_train = 10
-batch_size_test = 48
+random_seed = 1
+torch.backends.cudnn.enabled = False
+torch.manual_seed(random_seed)
 
 train_annotations = "Images/Train/labels.csv"
 train_dir = "Images/Train"
 test_annotations = "Images/Test/labels.csv"
 test_dir = "Images/Test"
 
-train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_dir))
-test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir))
+train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_dir, ToTensor()),
+                                           batch_size=batch_size_train, shuffle=True)
+test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir, ToTensor()),
+                                          batch_size=batch_size_test, shuffle=False)
         
-            
+# examples = enumerate(test_loader)
+# batch_idx, (example_data, example_targets) = next(examples)
+# fig = plt.figure()
+
+# for i in range(6):
+#     plt.subplot(2,3, i+1)
+#     plt.tight_layout()
+    
+#     example_img = example_data[i]
+#     example_img = torch.swapaxes(example_img, 0, 2)
+#     example_img = torch.swapaxes(example_img, 0, 1)
+    
+#     plt.imshow(torch.sum(example_img, 2))
+#     plt.title("Ground Truth: {}".format(example_targets[i]))
+
+# plt.show(fig)
+
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super(SimpleCNN, self).__init__()
+        self.conv1 = nn.Conv3d(1, 10, kernel_size=(19, 5, 5))
+        self.conv2 = nn.Conv3d(10, 20, kernel_size=(19, 5, 5))
+        self.fc1 = nn.Linear(188160, 2)
+        
+    def forward(self, x):
+        print(x.shape)
+        x = F.relu(F.max_pool3d(self.conv1(x), (8, 2, 2)))
+        x = F.relu(F.max_pool3d(self.conv2(x), (8, 2, 2)))
+        print(x.shape)
+        x = x.view(-1, 188160)
+        x = F.relu(self.fc1(x))
+        return F.log_softmax(x)
+    
+
+simple_cnn = SimpleCNN()
+optimizer = optim.SGD(simple_cnn.parameters(), lr=learning_rate, momentum=momentum)
+
+train_losses = []
+train_counter = []
+test_losses = []
+test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
+
+def train(epoch):
+  simple_cnn.train()
+  for batch_idx, (data, target) in enumerate(train_loader):
+    optimizer.zero_grad()
+    output = simple_cnn(data)
+    loss = F.nll_loss(output, target)
+    loss.backward()
+    optimizer.step()
+    if batch_idx % log_interval == 0:
+      print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+        epoch, batch_idx * len(data), len(train_loader.dataset),
+        100. * batch_idx / len(train_loader), loss.item()))
+      train_losses.append(loss.item())
+      train_counter.append(
+        (batch_idx*64) + ((epoch-1)*len(train_loader.dataset)))
+
+
+def test():
+    simple_cnn.eval()
+    test_loss = 0
+    correct = 0
+    
+    with torch.no_grad():
+        for data, target in test_loader:   
+            print(data.shape)
+            output = simple_cnn(data)
+            test_loss += F.nll_loss(output, target, size_average=False).item()
+            pred = output.data.max(1, keepdim=True)[1]
+            correct += pred.eq(target.data.view_as(pred)).sum()
+       
+    test_loss /= len(test_loader.dataset)
+    test_losses.append(test_loss)
+    print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
+  
+
+test()
+for epoch in range(1, n_epochs + 1):
+    train(epoch)
+    test()
         
         
