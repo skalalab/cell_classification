@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import random
+from collections import Counter
 
 from torch.utils.data import Dataset
 import pandas as pd
@@ -41,9 +42,8 @@ class CellDataset(Dataset):
 n_epochs = 3
 batch_size_train = 24
 batch_size_test = 48    
-learning_rate = 0.01
-momentum = 0.5
-log_interval = 10
+learning_rate = 0.001
+log_interval = 2
 
 random_seed = 1
 torch.backends.cudnn.enabled = False
@@ -58,43 +58,62 @@ train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_
                                            batch_size=batch_size_train, shuffle=True)
 test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir, ToTensor()),
                                           batch_size=batch_size_test, shuffle=False)
-        
-# examples = enumerate(test_loader)
-# batch_idx, (example_data, example_targets) = next(examples)
-# fig = plt.figure()
 
-# for i in range(6):
-#     plt.subplot(2,3, i+1)
-#     plt.tight_layout()
+#%%       
+examples = enumerate(test_loader)
+batch_idx, (example_data, example_targets) = next(examples)
+fig = plt.figure()
+
+for i in range(6):
+    plt.subplot(2,3, i+1)
+    plt.tight_layout()
     
-#     example_img = example_data[i]
-#     example_img = torch.swapaxes(example_img, 0, 2)
-#     example_img = torch.swapaxes(example_img, 0, 1)
+    example_img = example_data[i][0]
+    example_img = torch.swapaxes(example_img, 0, 2)
+    example_img = torch.swapaxes(example_img, 0, 1)
     
-#     plt.imshow(torch.sum(example_img, 2))
-#     plt.title("Ground Truth: {}".format(example_targets[i]))
+    plt.imshow(torch.sum(example_img, 2))
+    plt.title("Ground Truth: {}".format(example_targets[i]))
 
-# plt.show(fig)
+plt.show(fig)
 
+training_csv = pd.read_csv(train_annotations)
+count = Counter(0 if 'quiescent' in training_csv.iloc[row, 0] else 1
+                     for row in range(1, training_csv.shape[0]))
+
+if count[1] > count[0]:
+    class_weight = torch.tensor([count[1]/count[0], 1])
+else:
+    class_weight = torch.tensor([1, count[0]/count[1]])
+
+#%%
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv3d(1, 10, kernel_size=(19, 5, 5))
-        self.conv2 = nn.Conv3d(10, 20, kernel_size=(19, 5, 5))
-        self.fc1 = nn.Linear(188160, 2)
+        self.conv1 = nn.Conv3d(1, 10, kernel_size=(19,5,5))
+        self.conv2 = nn.Conv3d(10, 20, kernel_size=(11,5,5))
+        self.fc1 = nn.Linear(47040, 2)
         
     def forward(self, x):
-        print(x.shape)
-        x = F.relu(F.max_pool3d(self.conv1(x), (8, 2, 2)))
-        x = F.relu(F.max_pool3d(self.conv2(x), (8, 2, 2)))
-        print(x.shape)
-        x = x.view(-1, 188160)
+        x = self.conv1(x)
+        x = F.relu(F.max_pool3d(x, (4,2,2)))
+        x = self.conv2(x)
+        x = F.relu(F.max_pool3d(x, (4,2,2)))
+        x = x.flatten(1)
         x = F.relu(self.fc1(x))
-        return F.log_softmax(x)
+        return F.log_softmax(x, -1)
+    
+
+# He initialization of weights
+def weights_init(layer_in):
+  if isinstance(layer_in, nn.Linear):
+    nn.init.kaiming_uniform_(layer_in.weight)
+    layer_in.bias.data.fill_(0.0)
     
 
 simple_cnn = SimpleCNN()
-optimizer = optim.SGD(simple_cnn.parameters(), lr=learning_rate, momentum=momentum)
+simple_cnn.apply(weights_init)
+optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
 train_losses = []
 train_counter = []
@@ -102,22 +121,28 @@ test_losses = []
 test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
 def train(epoch):
-  simple_cnn.train()
-  for batch_idx, (data, target) in enumerate(train_loader):
-    optimizer.zero_grad()
-    output = simple_cnn(data)
-    loss = F.nll_loss(output, target)
-    loss.backward()
-    optimizer.step()
-    if batch_idx % log_interval == 0:
-      print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-        epoch, batch_idx * len(data), len(train_loader.dataset),
-        100. * batch_idx / len(train_loader), loss.item()))
-      train_losses.append(loss.item())
-      train_counter.append(
-        (batch_idx*64) + ((epoch-1)*len(train_loader.dataset)))
+    simple_cnn.train()
+    
+    for batch_idx, (data, target) in enumerate(train_loader):
+        optimizer.zero_grad()
+        output = simple_cnn(data)
+        loss = F.nll_loss(output, target, weight=class_weight)
+        loss.backward()
+        
+        for name, param in simple_cnn.named_parameters():
+            print(name, param.grad)
+        
+        optimizer.step()
+    
+        if batch_idx % log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
+            train_losses.append(loss.item())
+            train_counter.append(
+                (batch_idx*64) + ((epoch-1)*len(train_loader.dataset)))
 
-
+#%%
 def test():
     simple_cnn.eval()
     test_loss = 0
@@ -125,16 +150,15 @@ def test():
     
     with torch.no_grad():
         for data, target in test_loader:   
-            print(data.shape)
             output = simple_cnn(data)
-            test_loss += F.nll_loss(output, target, size_average=False).item()
+            test_loss += F.nll_loss(output, target, weight=class_weight, reduction="sum").item()
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).sum()
        
     test_loss /= len(test_loader.dataset)
     test_losses.append(test_loss)
     print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
-  
+#%%
 
 test()
 for epoch in range(1, n_epochs + 1):
