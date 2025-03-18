@@ -39,13 +39,13 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 3
-batch_size_train = 24
+n_epochs = 10
+batch_size_train = 5
 batch_size_test = 48    
-learning_rate = 0.001
-log_interval = 2
+learning_rate = 0.01
+log_interval = 1
 
-random_seed = 1
+random_seed = 5
 torch.backends.cudnn.enabled = False
 torch.manual_seed(random_seed)
 
@@ -90,9 +90,10 @@ else:
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv3d(1, 10, kernel_size=(19,5,5))
-        self.conv2 = nn.Conv3d(10, 20, kernel_size=(11,5,5))
-        self.fc1 = nn.Linear(47040, 2)
+        self.conv1 = nn.Conv3d(1, 10, kernel_size=(17,3,3))
+        self.conv2 = nn.Conv3d(10, 20, kernel_size=(9,3,3))
+        self.fc1 = nn.Linear(58500, 120)
+        self.fc2 = nn.Linear(120, 2)
         
     def forward(self, x):
         x = self.conv1(x)
@@ -101,18 +102,12 @@ class SimpleCNN(nn.Module):
         x = F.relu(F.max_pool3d(x, (4,2,2)))
         x = x.flatten(1)
         x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         return F.log_softmax(x, -1)
     
 
-# He initialization of weights
-def weights_init(layer_in):
-  if isinstance(layer_in, nn.Linear):
-    nn.init.kaiming_uniform_(layer_in.weight)
-    layer_in.bias.data.fill_(0.0)
     
-
 simple_cnn = SimpleCNN()
-simple_cnn.apply(weights_init)
 optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
 train_losses = []
@@ -128,10 +123,6 @@ def train(epoch):
         output = simple_cnn(data)
         loss = F.nll_loss(output, target, weight=class_weight)
         loss.backward()
-        
-        for name, param in simple_cnn.named_parameters():
-            print(name, param.grad)
-        
         optimizer.step()
     
         if batch_idx % log_interval == 0:
