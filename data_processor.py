@@ -13,6 +13,7 @@ from pathlib import Path
 import visualizer
 import math
 import random
+from glob import glob
 
 # information for cell
 class Cell():
@@ -102,9 +103,29 @@ def pad_cells(cells, size):
         side_padding = size - cell.image.shape[1]
         cell.image = np.pad(cell.image, ((math.floor(vert_padding/2),math.ceil(vert_padding/2)), (math.floor(side_padding/2),math.ceil(side_padding/2)), (0, 0)), 'constant')   
     
+    
+# compute entropy
+def compute_entropy(img_name):
+    img = cv2.imread(img_name, 0)
+    
+    cur_hist = cv2.calcHist([img],[0], None, [256], [0,256]).flatten()
 
+    # Remove zeroes
+    hist_no_zero = np.array([i for i in cur_hist if i != 0])
 
-# # save cells to folder
+    # Normalize the hist so it sums to 1
+    hist_no_zero = hist_no_zero / np.size(img)
+
+    # Compute the entropy
+    log_2 = np.log(hist_no_zero) / np.log(2)
+    entropy = -1 * np.dot(hist_no_zero, log_2)
+    return entropy
+
+# filter cells based on entropy thresholding
+def filter_cells(cells):
+    pass
+
+# save cells to folder
 def save_cells(cells, output): 
     
     # create output folder
@@ -120,10 +141,23 @@ def save_cells(cells, output):
 
 
 # process
+active = []
+
+for file in glob("Images/*active.sdt"):
+    cells = split_sdt(file, file.replace(".sdt",".tif"))
+    
+    for cell in cells:
+        active.append(cell)
+    
+quiescent = []
+    
+for file in glob("Images/*quiescent.sdt"):
+    cells = split_sdt(file, file.replace(".sdt",".tif"))
+    
+    for cell in cells:
+        quiescent.append(cell)
 
 random.seed(10)
-active = split_sdt("Images/active.sdt", "Images/active.tif")
-quiescent = split_sdt("Images/quiescent.sdt", "Images/quiescent.tif")
 random.shuffle(active)
 random.shuffle(quiescent)
 
@@ -134,9 +168,12 @@ test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
 train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
 size = max(max_size(test), max_size(train))
+print(size)
 
 pad_cells(test, size)
 pad_cells(train, size)
+
+
 
 save_cells(test, "Images/Test")
 save_cells(train, "Images/Train")
