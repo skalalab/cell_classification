@@ -14,6 +14,7 @@ import visualizer
 import math
 import random
 from glob import glob
+import scipy
 
 # information for cell
 class Cell():
@@ -22,6 +23,7 @@ class Cell():
         self.image = image
         self.activation = activation
         self.name = name
+        self.entropy = 0
 
 
 # split sdt into single cropped cells
@@ -105,25 +107,43 @@ def pad_cells(cells, size):
     
     
 # compute entropy
-def compute_entropy(img_name):
-    img = cv2.imread(img_name, 0)
+# def compute_entropy(img_name):
+#     img = cv2.imread(img_name, 0)
     
-    cur_hist = cv2.calcHist([img],[0], None, [256], [0,256]).flatten()
+#     cur_hist = cv2.calcHist([img],[0], None, [256], [0,256]).flatten()
 
-    # Remove zeroes
-    hist_no_zero = np.array([i for i in cur_hist if i != 0])
+#     # Remove zeroes
+#     hist_no_zero = np.array([i for i in cur_hist if i != 0])
 
-    # Normalize the hist so it sums to 1
-    hist_no_zero = hist_no_zero / np.size(img)
+#     # Normalize the hist so it sums to 1
+#     hist_no_zero = hist_no_zero / np.size(img)
 
-    # Compute the entropy
-    log_2 = np.log(hist_no_zero) / np.log(2)
-    entropy = -1 * np.dot(hist_no_zero, log_2)
-    return entropy
+#     # Compute the entropy
+#     log_2 = np.log(hist_no_zero) / np.log(2)
+#     entropy = -1 * np.dot(hist_no_zero, log_2)
+#     return entropy
+
 
 # filter cells based on entropy thresholding
 def filter_cells(cells):
-    pass
+    # get entropy for each cell
+    for cell in cells:
+        # get the time frame with highest intensity
+        cell_hist = np.sum(np.sum(cell.image, 0), 0)
+        
+        max_intensity = 0
+        max_frame = 0
+        for i in range(cell_hist.shape[0]):
+            intensity = cell_hist[i]
+            
+            if intensity > max_intensity:
+                max_intensity = intensity
+                max_frame = i
+
+        # calculate entropy for max time frame
+        visualizer.visualize_array(cell[:, :, max_frame], "{}_cell{}".format(cell.name, str(cell.value)))
+        
+    
 
 # save cells to folder
 def save_cells(cells, output): 
@@ -173,7 +193,6 @@ print(size)
 pad_cells(test, size)
 pad_cells(train, size)
 
-
-
-save_cells(test, "Images/Test")
-save_cells(train, "Images/Train")
+filter_cells(test)
+# save_cells(test, "Images/Test")
+# save_cells(train, "Images/Train")

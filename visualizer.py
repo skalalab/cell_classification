@@ -30,14 +30,25 @@ def visualize_sdt(file):
             plt.title("{}: {}".format(file, str(i)))
             plt.show()
             
+    return data[0]
             
-# visualize cells
+# visualize tif
 def visualize_tif(file):
     with tiff.TiffFile(file) as tif:
         image = tif.asarray()
     
     plt.imshow(np.sum(image, axis=2))
     plt.title(file)
+    plt.show()
+    
+
+# visualize numpy array
+def visualize_array(array, title, need_sum=False):
+    if need_sum:
+        array = np.sum(array, 2)
+        
+    plt.imshow(array)
+    plt.title(title)
     plt.show()
 
         

@@ -40,9 +40,9 @@ class CellDataset(Dataset):
         return image, label
     
 n_epochs = 10
-batch_size_train = 5
+batch_size_train = 8
 batch_size_test = 48    
-learning_rate = 0.01
+learning_rate = 0.001
 log_interval = 1
 
 random_seed = 5
@@ -91,8 +91,8 @@ class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
         self.conv1 = nn.Conv3d(1, 10, kernel_size=(17,3,3))
-        self.conv2 = nn.Conv3d(10, 20, kernel_size=(9,3,3))
-        self.fc1 = nn.Linear(58500, 120)
+        self.conv2 = nn.Conv3d(10, 20, kernel_size=(5,3,3))
+        self.fc1 = nn.Linear(63000, 120)
         self.fc2 = nn.Linear(120, 2)
         
     def forward(self, x):
