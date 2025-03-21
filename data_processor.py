@@ -15,6 +15,7 @@ import math
 import random
 from glob import glob
 import scipy
+import matplotlib.pyplot as plt
 
 # information for cell
 class Cell():
@@ -105,7 +106,6 @@ def pad_cells(cells, size):
         side_padding = size - cell.image.shape[1]
         cell.image = np.pad(cell.image, ((math.floor(vert_padding/2),math.ceil(vert_padding/2)), (math.floor(side_padding/2),math.ceil(side_padding/2)), (0, 0)), 'constant')   
     
-    
 # compute entropy
 # def compute_entropy(img_name):
 #     img = cv2.imread(img_name, 0)
@@ -129,20 +129,33 @@ def filter_cells(cells):
     # get entropy for each cell
     for cell in cells:
         # get the time frame with highest intensity
-        cell_hist = np.sum(np.sum(cell.image, 0), 0)
+        timeframes = np.sum(np.sum(cell.image, 0), 0)
         
         max_intensity = 0
         max_frame = 0
-        for i in range(cell_hist.shape[0]):
-            intensity = cell_hist[i]
+        for i in range(timeframes.shape[0]):
+            intensity = timeframes[i]
             
             if intensity > max_intensity:
                 max_intensity = intensity
                 max_frame = i
 
         # calculate entropy for max time frame
-        visualizer.visualize_array(cell[:, :, max_frame], "{}_cell{}".format(cell.name, str(cell.value)))
+        cell_hist = np.copy(cell.image[:,:,max_frame])
+        cell_max = np.max(cell_hist)
+        cell_hist = cell_hist / cell_max
+        cell_hist = cell_hist * 255
+        # cell_hist, bins = np.histogram(cell_hist, bins=256, range=(0,256)) 
+        # plt.bar(bins[:-1],cell_hist,width=1)
+        plt.show()
+        cell_hist =  cell_hist[cell_hist != 0]
+        # plt.bar([i for i in range(cell_hist.shape[0])],cell_hist,width=1)
+        # plt.show()
+        cell_hist = cell_hist / np.size(cell.image[:,:,max_frame])
+        cell.entropy = scipy.stats.entropy(cell_hist)
         
+    cells.sort(key=lambda x: x.entropy)
+
     
 
 # save cells to folder
@@ -177,6 +190,14 @@ for file in glob("Images/*quiescent.sdt"):
     for cell in cells:
         quiescent.append(cell)
 
+size = max(max_size(active), max_size(quiescent))
+print(size)
+
+pad_cells(active, size)
+pad_cells(quiescent, size)
+
+
+# split into test/train
 random.seed(10)
 random.shuffle(active)
 random.shuffle(quiescent)
@@ -187,12 +208,8 @@ quiescent_split_ind = math.floor((len(quiescent) / 5))
 test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
 train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
-size = max(max_size(test), max_size(train))
-print(size)
-
-pad_cells(test, size)
-pad_cells(train, size)
-
 filter_cells(test)
+    
+# save to folders
 # save_cells(test, "Images/Test")
 # save_cells(train, "Images/Train")
