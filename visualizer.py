@@ -43,7 +43,7 @@ def visualize_tif(file):
     
 
 # visualize numpy array
-def visualize_array(array, title, need_sum=False):
+def visualize_array(array, title, need_sum=True):
     if need_sum:
         array = np.sum(array, 2)
         

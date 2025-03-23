@@ -16,6 +16,7 @@ import random
 from glob import glob
 import scipy
 import matplotlib.pyplot as plt
+import cv2
 
 # information for cell
 class Cell():
@@ -104,60 +105,62 @@ def pad_cells(cells, size):
     for cell in cells:
         vert_padding = size - cell.image.shape[0]
         side_padding = size - cell.image.shape[1]
-        cell.image = np.pad(cell.image, ((math.floor(vert_padding/2),math.ceil(vert_padding/2)), (math.floor(side_padding/2),math.ceil(side_padding/2)), (0, 0)), 'constant')   
+        cell.image = np.pad(cell.image, 
+                            ((math.floor(vert_padding/2),math.ceil(vert_padding/2)), 
+                             (math.floor(side_padding/2),math.ceil(side_padding/2)), (0, 0)), 
+                            'constant')   
     
-# compute entropy
-# def compute_entropy(img_name):
-#     img = cv2.imread(img_name, 0)
+
+# get entropy of cell
+def calculate_entropy(cell):
+    # get the time frame with highest intensity
+    timeframes = np.sum(np.sum(cell.image, 0), 0)
     
-#     cur_hist = cv2.calcHist([img],[0], None, [256], [0,256]).flatten()
+    max_intensity = 0
+    max_frame = 0
+    for i in range(timeframes.shape[0]):
+        intensity = timeframes[i]
+        
+        if intensity > max_intensity:
+            max_intensity = intensity
+            max_frame = i
 
-#     # Remove zeroes
-#     hist_no_zero = np.array([i for i in cur_hist if i != 0])
+    # calculate entropy for max time frame
+    cell_max = np.max(cell.image[:,:,max_frame])
+    cell_hist, bins = np.histogram(cell.image[:,:,max_frame], bins=cell_max + 1, range=(0,cell_max+1))
+    cell.entropy = scipy.stats.entropy(cell_hist)
+        
 
-#     # Normalize the hist so it sums to 1
-#     hist_no_zero = hist_no_zero / np.size(img)
-
-#     # Compute the entropy
-#     log_2 = np.log(hist_no_zero) / np.log(2)
-#     entropy = -1 * np.dot(hist_no_zero, log_2)
-#     return entropy
-
-
-# filter cells based on entropy thresholding
-def filter_cells(cells):
-    # get entropy for each cell
+# filter cells by entropy
+def filter_cells(cells, q):
+    # get entropies
+    entropies = []
     for cell in cells:
-        # get the time frame with highest intensity
-        timeframes = np.sum(np.sum(cell.image, 0), 0)
-        
-        max_intensity = 0
-        max_frame = 0
-        for i in range(timeframes.shape[0]):
-            intensity = timeframes[i]
-            
-            if intensity > max_intensity:
-                max_intensity = intensity
-                max_frame = i
+        calculate_entropy(cell)
+        entropies.append(cell.entropy)
 
-        # calculate entropy for max time frame
-        cell_hist = np.copy(cell.image[:,:,max_frame])
-        cell_max = np.max(cell_hist)
-        cell_hist = cell_hist / cell_max
-        cell_hist = cell_hist * 255
-        # cell_hist, bins = np.histogram(cell_hist, bins=256, range=(0,256)) 
-        # plt.bar(bins[:-1],cell_hist,width=1)
-        plt.show()
-        cell_hist =  cell_hist[cell_hist != 0]
-        # plt.bar([i for i in range(cell_hist.shape[0])],cell_hist,width=1)
-        # plt.show()
-        cell_hist = cell_hist / np.size(cell.image[:,:,max_frame])
-        cell.entropy = scipy.stats.entropy(cell_hist)
-        
     cells.sort(key=lambda x: x.entropy)
 
-    
+    # remove the lowest q*100% cells
+    mean = np.mean(entropies)
+    std = np.std(entropies)
+    cutoff = scipy.stats.norm.ppf(q, loc=mean, scale=std)
+    print(mean)
+    print(std)
+    print(cutoff)
 
+    for i in range(len(cells)):
+        if cells[i].entropy >= cutoff:
+            filtered = cells[:i]
+            cells = cells[i:]
+            break
+        
+    if filtered == None:
+        filtered = []
+        
+    return cells, filtered
+
+        
 # save cells to folder
 def save_cells(cells, output): 
     
@@ -173,7 +176,7 @@ def save_cells(cells, output):
             labels.write("{}_cell{}.tif, {}\n".format(cell.name, str(cell.value), cell.activation))
 
 
-# process
+# crop all cells
 active = []
 
 for file in glob("Images/*active.sdt"):
@@ -190,12 +193,24 @@ for file in glob("Images/*quiescent.sdt"):
     for cell in cells:
         quiescent.append(cell)
 
-size = max(max_size(active), max_size(quiescent))
-print(size)
 
+# pad all cells
+size = max(max_size(active), max_size(quiescent))
 pad_cells(active, size)
 pad_cells(quiescent, size)
 
+
+# filter cells
+active, filtered = filter_cells(active, 0.1)
+
+for cell in filtered:
+    visualizer.visualize_array(cell.image, "filtered")
+    
+quiescent, filtered = filter_cells(quiescent, 0.1)
+
+for cell in filtered:
+    visualizer.visualize_array(cell.image, "filtered")
+    
 
 # split into test/train
 random.seed(10)
@@ -208,7 +223,6 @@ quiescent_split_ind = math.floor((len(quiescent) / 5))
 test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
 train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
-filter_cells(test)
     
 # save to folders
 # save_cells(test, "Images/Test")
