@@ -20,17 +20,21 @@ import cv2
 
 # information for cell
 class Cell():
-    def __init__(self, value, image, activation, name):
+    def __init__(self, value, image, activation, filename):
         self.value = value
         self.image = image
         self.activation = activation
-        self.name = name
+        self.filename = filename
         self.entropy = 0
 
 
 # split sdt into single cropped cells
+#
+# param: sdt (string) - file path for sdt
+# param: mask (string) - file path for mask
+# return: list of Cells of cells in the sdt
 def split_sdt(sdt, mask): 
-    # get image data
+    # get sdt data
     sdt_data = sdt_reader.read_sdt150(sdt)
 
     # get nonempty channel if needed
@@ -50,12 +54,13 @@ def split_sdt(sdt, mask):
     cell_values = np.unique(mask_data)
     cell_values = cell_values[1:]
     
-    # single out each cell and find bounds
+    # mask each cell and find bounding box
     cell_images = []
     for cell_value in cell_values:
-        # mask each cell
         cell_image = np.copy(sdt_data)
         
+        # iterate through all pixels of image and zero out if not part of 
+        # mask for cell
         upper = None
         left = cell_image.shape[0]
         right = 0
@@ -79,18 +84,22 @@ def split_sdt(sdt, mask):
                 
         cropped_image = cell_image[upper:lower+1, left:right+1, :]
         
-        # create Cell for this cell
-        name = Path(sdt).name[:-4]
-        activation = "act" in name
-        cell_images.append(Cell(cell_value, cropped_image, activation, name))
+        # create Cell object for this cell
+        filename = Path(sdt).name[:-4]
+        activation = "act" in filename
+        cell_images.append(Cell(cell_value, cropped_image, activation, filename))
     
     return cell_images    
 
-# get max size
-def max_size(cells):
-    # get largest dimension as size
+# get the i'th biggest size of a cell in list. 
+#
+# param: cells (list of Cells)
+# param: i (int) i'th biggest cell size to get. i starts at 0
+# returns: largest size of cell in list
+def max_size(cells, i):
+    # get i'th largest dimension as size
     cells.sort(key=lambda x: max(x.image.shape[0], x.image.shape[1]), reverse=True)
-    size = max(cells[0].image.shape[0], cells[0].image.shape[1])
+    size = max(cells[i].image.shape[0], cells[i].image.shape[1])
     
     # make size even
     if size % 2 != 0:
@@ -99,7 +108,10 @@ def max_size(cells):
     return size
 
 
-# pad cells
+# pad cells to be size x size
+#
+# param: cells (list of Cells)
+# param: size (int) - size to be padded to
 def pad_cells(cells, size):
     # pad all images to be size x size
     for cell in cells:
@@ -111,7 +123,9 @@ def pad_cells(cells, size):
                             'constant')   
     
 
-# get entropy of cell
+# calculate entropy of a cell
+#
+# param: cell (Cell)
 def calculate_entropy(cell):
     # get the time frame with highest intensity
     timeframes = np.sum(np.sum(cell.image, 0), 0)
@@ -132,6 +146,11 @@ def calculate_entropy(cell):
         
 
 # filter cells by entropy
+#
+# param: cells (list of Cells)
+# param: q (float) - lower tail probability
+# return: list of cells that weren't filtered
+# return: list of cells that were filtered
 def filter_cells(cells, q):
     # get entropies
     entropies = []
@@ -139,11 +158,10 @@ def filter_cells(cells, q):
         calculate_entropy(cell)
         entropies.append(cell.entropy)
 
+    # remove the lowest q*100%  of cells
     cells.sort(key=lambda x: x.entropy)
-
-    # remove the lowest q*100% cells
     mean = np.mean(entropies)
-    std = np.std(entropies)
+    std = np.std(entropies, ddof=1)
     cutoff = scipy.stats.norm.ppf(q, loc=mean, scale=std)
     print(mean)
     print(std)
@@ -161,9 +179,11 @@ def filter_cells(cells, q):
     return cells, filtered
 
         
-# save cells to folder
+# save cells to folder and make csv of cells
+#
+# param: cells (list of Cells)
+# param: output (string) - output path
 def save_cells(cells, output): 
-    
     # create output folder
     if not os.path.exists(output):
         os.makedirs(output)
@@ -175,6 +195,10 @@ def save_cells(cells, output):
             tiff.imwrite(output + "/{}_cell{}.tif".format(cell.name, str(cell.value)), cell.image)
             labels.write("{}_cell{}.tif, {}\n".format(cell.name, str(cell.value), cell.activation))
 
+
+
+
+# now run the program
 
 # crop all cells
 active = []
@@ -195,7 +219,7 @@ for file in glob("Images/*quiescent.sdt"):
 
 
 # pad all cells
-size = max(max_size(active), max_size(quiescent))
+size = max_size(active+quiescent, 0)
 pad_cells(active, size)
 pad_cells(quiescent, size)
 
