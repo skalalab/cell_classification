@@ -41,7 +41,7 @@ class CellDataset(Dataset):
     
 n_epochs = 10
 batch_size_train = 8
-batch_size_test = 48    
+batch_size_test = 20    
 learning_rate = 0.001
 log_interval = 1
 
@@ -60,22 +60,22 @@ test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir
                                           batch_size=batch_size_test, shuffle=False)
 
 #%%       
-examples = enumerate(test_loader)
-batch_idx, (example_data, example_targets) = next(examples)
-fig = plt.figure()
+# examples = enumerate(test_loader)
+# batch_idx, (example_data, example_targets) = next(examples)
+# fig = plt.figure()
 
-for i in range(6):
-    plt.subplot(2,3, i+1)
-    plt.tight_layout()
+# for i in range(6):
+#     plt.subplot(2,3, i+1)
+#     plt.tight_layout()
     
-    example_img = example_data[i][0]
-    example_img = torch.swapaxes(example_img, 0, 2)
-    example_img = torch.swapaxes(example_img, 0, 1)
+#     example_img = example_data[i][0]
+#     example_img = torch.swapaxes(example_img, 0, 2)
+#     example_img = torch.swapaxes(example_img, 0, 1)
     
-    plt.imshow(torch.sum(example_img, 2))
-    plt.title("Ground Truth: {}".format(example_targets[i]))
+#     plt.imshow(torch.sum(example_img, 2))
+#     plt.title("Ground Truth: {}".format(example_targets[i]))
 
-plt.show(fig)
+# plt.show(fig)
 
 training_csv = pd.read_csv(train_annotations)
 count = Counter(0 if 'quiescent' in training_csv.iloc[row, 0] else 1
@@ -155,5 +155,14 @@ test()
 for epoch in range(1, n_epochs + 1):
     train(epoch)
     test()
+    
+
+fig = plt.figure()
+plt.plot(train_counter, train_losses, color='blue')
+plt.scatter(test_counter, test_losses, color='red')
+plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
+plt.xlabel('number of training examples seen')
+plt.ylabel('negative log likelihood loss')
+fig
         
         

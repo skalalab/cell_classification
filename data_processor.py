@@ -27,6 +27,8 @@ class Cell():
         self.filename = filename
         self.entropy = 0
 
+    def __repr__(self):
+        return str(self.image.shape[0]) + " x " + str(self.image.shape[1])
 
 # split sdt into single cropped cells
 #
@@ -91,21 +93,25 @@ def split_sdt(sdt, mask):
     
     return cell_images    
 
-# get the i'th biggest size of a cell in list. 
+# remove i largest cells and return the size of the new largest cell
 #
 # param: cells (list of Cells)
-# param: i (int) i'th biggest cell size to get. i starts at 0
+# param: i (int) - number of largest cells to remove
+# returns: new list of Cells with largest i cells removed
 # returns: largest size of cell in list
-def max_size(cells, i):
-    # get i'th largest dimension as size
+def remove_largest_cells(cells, i):
+    # remove i largest cells
     cells.sort(key=lambda x: max(x.image.shape[0], x.image.shape[1]), reverse=True)
-    size = max(cells[i].image.shape[0], cells[i].image.shape[1])
+    cells = cells[i:]
+    
+    # get the size of largest cell
+    size = max(cells[0].image.shape[0], cells[0].image.shape[1])
     
     # make size even
     if size % 2 != 0:
         size += 1
         
-    return size
+    return cells, size
 
 
 # pad cells to be size x size
@@ -192,8 +198,8 @@ def save_cells(cells, output):
     with open(output + "/labels.csv", "w") as labels:
         labels.write("cell_image, cell_label\n")
         for cell in cells:
-            tiff.imwrite(output + "/{}_cell{}.tif".format(cell.name, str(cell.value)), cell.image)
-            labels.write("{}_cell{}.tif, {}\n".format(cell.name, str(cell.value), cell.activation))
+            tiff.imwrite(output + "/{}_cell{}.tif".format(cell.filename, str(cell.value)), cell.image)
+            labels.write("{}_cell{}.tif, {}\n".format(cell.filename, str(cell.value), cell.activation))
 
 
 
@@ -201,39 +207,33 @@ def save_cells(cells, output):
 # now run the program
 
 # crop all cells
-active = []
+all_cells = []
 
-for file in glob("Images/*active.sdt"):
+for file in glob("Images/*.sdt"):
     cells = split_sdt(file, file.replace(".sdt",".tif"))
     
     for cell in cells:
-        active.append(cell)
-    
-quiescent = []
-    
-for file in glob("Images/*quiescent.sdt"):
-    cells = split_sdt(file, file.replace(".sdt",".tif"))
-    
-    for cell in cells:
-        quiescent.append(cell)
+        all_cells.append(cell)
 
+# remove i largest cells
+all_cells, size = remove_largest_cells(all_cells, 0)
 
-# pad all cells
-size = max_size(active+quiescent, 0)
-pad_cells(active, size)
-pad_cells(quiescent, size)
-
+# pad cells
+pad_cells(all_cells, size)
 
 # filter cells
+active = [cell for cell in all_cells if cell.activation is True]
+quiescent = [cell for cell in all_cells if cell.activation is False]
+
 active, filtered = filter_cells(active, 0.1)
 
 for cell in filtered:
-    visualizer.visualize_array(cell.image, "filtered")
+    visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
     
 quiescent, filtered = filter_cells(quiescent, 0.1)
 
 for cell in filtered:
-    visualizer.visualize_array(cell.image, "filtered")
+    visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
     
 
 # split into test/train
@@ -249,5 +249,5 @@ train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
     
 # save to folders
-# save_cells(test, "Images/Test")
-# save_cells(train, "Images/Train")
+save_cells(test, "Images/Test")
+save_cells(train, "Images/Train")
