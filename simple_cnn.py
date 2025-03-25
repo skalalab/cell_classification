@@ -20,6 +20,7 @@ import pandas as pd
 import tifffile as tiff
 import numpy as np
 from torchvision.transforms import ToTensor
+import torch.multiprocessing as mp
 
 class CellDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform):
@@ -110,27 +111,28 @@ class SimpleCNN(nn.Module):
 simple_cnn = SimpleCNN()
 optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
-train_losses = []
-train_counter = []
-test_losses = []
-test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
+# train_losses = []
+# train_counter = []
+# test_losses = []
+# test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
-def train(epoch):
+def train(epochs):
     simple_cnn.train()
     
-    for batch_idx, (data, target) in enumerate(train_loader):
-        optimizer.zero_grad()
-        output = simple_cnn(data)
-        loss = F.nll_loss(output, target, weight=class_weight)
-        loss.backward()
-        optimizer.step()
-    
-        if batch_idx % log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, (batch_idx+1) * len(data), len(train_loader.dataset),
-                100. * (batch_idx+1) / len(train_loader), loss.item()))
-            train_losses.append(loss.item())
-            train_counter.append(((batch_idx+1)*batch_size_train))
+    for i in range(epochs):
+        for batch_idx, (data, target) in enumerate(train_loader):
+            optimizer.zero_grad()
+            output = simple_cnn(data)
+            loss = F.nll_loss(output, target, weight=class_weight)
+            loss.backward()
+            optimizer.step()
+        
+            if batch_idx % log_interval == 0:
+                print("{}: epoch {}: {}/{}: {}".format(mp.current_process().name, 
+                    i+1, (batch_idx+1) * len(data), len(train_loader.dataset),
+                    loss.item()))
+                # train_losses.append(loss.item())
+                # train_counter.append(((batch_idx+1)*batch_size_train))
 
 #%%
 def test():
@@ -146,22 +148,42 @@ def test():
             correct += pred.eq(target.data.view_as(pred)).sum()
        
     test_loss /= len(test_loader.dataset)
-    test_losses.append(test_loss)
+    # test_losses.append(test_loss)
     print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
 #%%
 
-test()
-for epoch in range(1, n_epochs + 1):
-    train(epoch)
+if __name__ == "__main__":
+    # set up multi processing
+    num_processes = 1
+    simple_cnn.share_memory()
+    
+    # start each process
     test()
+    processes = []
+    for rank in range(num_processes):
+        p = mp.Process(target=train, args=(2,), name=f'Process-{rank}')
+        p.start()
+        processes.append(p)
+        print(f'Started {p.name}')
+        
+    # wait for all processes to finish
+    for p in processes:
+        p.join()
+        print(f'Finished {p.name}')
+
+
+# test()
+# for epoch in range(1, n_epochs + 1):
+#     train(epoch)
+#     test()
     
 
-fig = plt.figure()
-plt.plot(train_counter, train_losses, color='blue')
-plt.scatter(test_counter, test_losses, color='red')
-plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
-plt.xlabel('number of training examples seen')
-plt.ylabel('negative log likelihood loss')
-fig
+# fig = plt.figure()
+# plt.plot(train_counter, train_losses, color='blue')
+# plt.scatter(test_counter, test_losses, color='red')
+# plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
+# plt.xlabel('number of training examples seen')
+# plt.ylabel('negative log likelihood loss')
+# fig
         
         
