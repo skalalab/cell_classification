@@ -39,7 +39,7 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 10
+n_epochs = 1
 batch_size_train = 8
 batch_size_test = 20    
 learning_rate = 0.001
@@ -127,11 +127,10 @@ def train(epoch):
     
         if batch_idx % log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+                epoch, (batch_idx+1) * len(data), len(train_loader.dataset),
+                100. * (batch_idx+1) / len(train_loader), loss.item()))
             train_losses.append(loss.item())
-            train_counter.append(
-                (batch_idx*64) + ((epoch-1)*len(train_loader.dataset)))
+            train_counter.append(((batch_idx+1)*batch_size_train))
 
 #%%
 def test():

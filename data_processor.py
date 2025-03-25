@@ -16,7 +16,6 @@ import random
 from glob import glob
 import scipy
 import matplotlib.pyplot as plt
-import cv2
 
 # information for cell
 class Cell():
