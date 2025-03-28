@@ -168,9 +168,7 @@ def filter_cells(cells, q):
     mean = np.mean(entropies)
     std = np.std(entropies, ddof=1)
     cutoff = scipy.stats.norm.ppf(q, loc=mean, scale=std)
-    print(mean)
-    print(std)
-    print(cutoff)
+
 
     for i in range(len(cells)):
         if cells[i].entropy >= cutoff:
@@ -206,6 +204,7 @@ def save_cells(cells, output):
 # now run the program
 
 # crop all cells
+print("start cropping...")
 all_cells = []
 
 for file in glob("Images/*.sdt"):
@@ -214,13 +213,19 @@ for file in glob("Images/*.sdt"):
     for cell in cells:
         all_cells.append(cell)
 
+print("finish cropping...")
 # remove i largest cells
+print("start removing...")
 all_cells, size = remove_largest_cells(all_cells, 0)
+print("finish removing... size: " + str(size))
 
 # pad cells
+print("start padding...")
 pad_cells(all_cells, size)
+print("finish padding...")
 
 # filter cells
+print("start filtering")
 active = [cell for cell in all_cells if cell.activation is True]
 quiescent = [cell for cell in all_cells if cell.activation is False]
 
@@ -233,8 +238,7 @@ quiescent, filtered = filter_cells(quiescent, 0.1)
 
 for cell in filtered:
     visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
-    
-
+print("finish filtering...")
 # split into test/train
 random.seed(10)
 random.shuffle(active)
@@ -248,5 +252,7 @@ train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
     
 # save to folders
+print("start saving")
 save_cells(test, "Images/Test")
 save_cells(train, "Images/Train")
+print("completed")

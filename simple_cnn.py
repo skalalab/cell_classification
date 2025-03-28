@@ -40,8 +40,8 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 1
-batch_size_train = 8
+n_epochs = 5
+batch_size_train = 4
 batch_size_test = 20    
 learning_rate = 0.001
 log_interval = 1
@@ -152,30 +152,30 @@ def test():
     print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
 #%%
 
-if __name__ == "__main__":
-    # set up multi processing
-    num_processes = 1
-    simple_cnn.share_memory()
+# if __name__ == "__main__":
+#     # set up multi processing
+#     num_processes = 2
+#     simple_cnn.share_memory()
     
-    # start each process
-    test()
-    processes = []
-    for rank in range(num_processes):
-        p = mp.Process(target=train, args=(2,), name=f'Process-{rank}')
-        p.start()
-        processes.append(p)
-        print(f'Started {p.name}')
-        
-    # wait for all processes to finish
-    for p in processes:
-        p.join()
-        print(f'Finished {p.name}')
-
-
-# test()
-# for epoch in range(1, n_epochs + 1):
-#     train(epoch)
+#     # start each process
 #     test()
+#     processes = []
+#     for rank in range(num_processes):
+#         p = mp.Process(target=train, args=(2,), name=f'Process-{rank}')
+#         p.start()
+#         processes.append(p)
+#         print(f'Started {p.name}')
+        
+#     # wait for all processes to finish
+#     for p in processes:
+#         p.join()
+#         print(f'Finished {p.name}')
+#     test()
+
+
+test()
+train(n_epochs)
+test()
     
 
 # fig = plt.figure()
