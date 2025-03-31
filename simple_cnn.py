@@ -43,10 +43,10 @@ class CellDataset(Dataset):
 n_epochs = 5
 batch_size_train = 4
 batch_size_test = 20    
-learning_rate = 0.001
+learning_rate = 0.0001
 log_interval = 1
 
-random_seed = 5
+random_seed = 10
 torch.backends.cudnn.enabled = False
 torch.manual_seed(random_seed)
 
@@ -91,9 +91,9 @@ else:
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv3d(1, 10, kernel_size=(17,3,3))
-        self.conv2 = nn.Conv3d(10, 20, kernel_size=(5,3,3))
-        self.fc1 = nn.Linear(63000, 120)
+        self.conv1 = nn.Conv3d(1, 16, kernel_size=(17,3,3))
+        self.conv2 = nn.Conv3d(16, 32, kernel_size=(5,3,3))
+        self.fc1 = nn.Linear(100800, 120)
         self.fc2 = nn.Linear(120, 2)
         
     def forward(self, x):
@@ -116,24 +116,23 @@ optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 # test_losses = []
 # test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
-def train(epochs):
+def train(epoch):
     simple_cnn.train()
     
-    for i in range(epochs):
-        for batch_idx, (data, target) in enumerate(train_loader):
-            optimizer.zero_grad()
-            output = simple_cnn(data)
-            loss = F.nll_loss(output, target, weight=class_weight)
-            loss.backward()
-            optimizer.step()
-        
-            if batch_idx % log_interval == 0:
-                print("{}: epoch {}: {}/{}: {}".format(mp.current_process().name, 
-                    i+1, (batch_idx+1) * len(data), len(train_loader.dataset),
-                    loss.item()))
-                # train_losses.append(loss.item())
-                # train_counter.append(((batch_idx+1)*batch_size_train))
-
+    for batch_idx, (data, target) in enumerate(train_loader):
+        optimizer.zero_grad()
+        output = simple_cnn(data)
+        loss = F.nll_loss(output, target, weight=class_weight)
+        loss.backward()
+        optimizer.step()
+    
+        if batch_idx % log_interval == 0:
+            print("{}: epoch {}: {}/{}: {}".format(mp.current_process().name, 
+                epoch+1, (batch_idx+1) * len(data), len(train_loader.dataset),
+                loss.item()))
+            # train_losses.append(loss.item())
+            # train_counter.append(((batch_idx+1)*batch_size_train))
+            
 #%%
 def test():
     simple_cnn.eval()
@@ -174,9 +173,9 @@ def test():
 
 
 test()
-train(n_epochs)
-test()
-    
+for i in range(n_epochs):
+    train(i)    
+    test()
 
 # fig = plt.figure()
 # plt.plot(train_counter, train_losses, color='blue')
