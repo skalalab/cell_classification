@@ -40,11 +40,10 @@ class CellDataset(Dataset):
         return image, label
     
 n_epochs = 10
-batch_size_train = 16
+batch_size_train = 4
 batch_size_test = 20    
 learning_rate = 0.001
-momentum=0.1
-log_interval = 2
+log_interval = 1
 
 
 random_seed = 20
@@ -92,9 +91,9 @@ else:
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv3d(1, 16, kernel_size=(17,3,3))
-        self.conv2 = nn.Conv3d(16, 32, kernel_size=(5,3,3))
-        self.fc1 = nn.Linear(100800, 120)
+        self.conv1 = nn.Conv3d(1, 32, kernel_size=(16,2,2))
+        self.conv2 = nn.Conv3d(32, 32, kernel_size=(4,2,2))
+        self.fc1 = nn.Linear(114688, 120)
         self.fc2 = nn.Linear(120, 2)
         
     def forward(self, x):
@@ -110,7 +109,7 @@ class SimpleCNN(nn.Module):
 
     
 simple_cnn = SimpleCNN()
-optimizer = optim.SGD(simple_cnn.parameters(), lr=learning_rate, momentum=momentum)
+optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
 train_losses = []
 train_counter = []

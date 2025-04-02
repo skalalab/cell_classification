@@ -50,15 +50,6 @@ def visualize_array(array, title, need_sum=True):
     plt.imshow(array)
     plt.title(title)
     plt.show()
-    
-
-visualize_tif("C:/Users/chris/cell_classification/Images/Train/d4_active_cell21_no.tif")
-visualize_tif("C:/Users/chris/cell_classification/Images/Train/d4_active_cell21_fh.tif")
-visualize_tif("C:/Users/chris/cell_classification/Images/Train/d4_active_cell21_fv.tif")
-visualize_tif("C:/Users/chris/cell_classification/Images/Train/d4_active_cell21_r90.tif")
-visualize_tif("C:/Users/chris/cell_classification/Images/Train/d4_active_cell21_r180.tif")
-visualize_tif("C:/Users/chris/cell_classification/Images/Train/d4_active_cell21_r270.tif")
-
 
         
         
