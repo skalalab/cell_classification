@@ -39,15 +39,15 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 10
+n_epochs = 1
 batch_size_train = 4
 batch_size_test = 20    
 learning_rate = 0.001
 log_interval = 1
 
 
-random_seed = 20
-torch.backends.cudnn.enabled = False
+random_seed = 2
+torch.backends.cudnn.deterministic = True
 torch.manual_seed(random_seed)
 
 train_annotations = "Images/Train/labels.csv"
@@ -98,12 +98,12 @@ class SimpleCNN(nn.Module):
         
     def forward(self, x):
         x = self.conv1(x)
-        x = F.relu(F.max_pool3d(x, (4,2,2)))
+        x = F.leaky_relu(F.max_pool3d(x, (4,2,2)))
         x = self.conv2(x)
-        x = F.relu(F.max_pool3d(x, (4,2,2)))
+        x = F.leaky_relu(F.max_pool3d(x, (4,2,2)))
         x = x.flatten(1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc2(x))
         return F.log_softmax(x, -1)
     
 
@@ -113,8 +113,8 @@ optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
 train_losses = []
 train_counter = []
-test_losses = []
-test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
+# test_losses = []
+# test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
 def train(epoch):
     simple_cnn.train()
@@ -122,6 +122,8 @@ def train(epoch):
     for batch_idx, (data, target) in enumerate(train_loader):
         optimizer.zero_grad()
         output = simple_cnn(data)
+        print(target)
+        print(output)
         loss = F.nll_loss(output, target, weight=class_weight)
         loss.backward()
         optimizer.step()
@@ -146,19 +148,18 @@ def test():
             correct += pred.eq(target.data.view_as(pred)).sum()
        
     test_loss /= len(test_loader.dataset)
-    test_losses.append(test_loss)
+    # test_losses.append(test_loss)
     print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
 #%%
 
-# test()
 for i in range(n_epochs):
     train(i)    
     test()
 
 fig = plt.figure()
 plt.plot(train_counter, train_losses, color='blue')
-plt.scatter(test_counter, test_losses, color='red')
-plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
+# plt.scatter(test_counter, test_losses, color='red')
+# plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
 plt.xlabel('number of training examples seen')
 plt.ylabel('negative log likelihood loss')
 fig
