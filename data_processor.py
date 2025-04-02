@@ -19,12 +19,13 @@ import matplotlib.pyplot as plt
 
 # information for cell
 class Cell():
-    def __init__(self, value, image, activation, filename):
+    def __init__(self, value, image, activation, filename, augmentation="no"):
         self.value = value
         self.image = image
         self.activation = activation
         self.filename = filename
         self.entropy = 0
+        self.augmentation = augmentation
 
     def __repr__(self):
         return str(self.image.shape[0]) + " x " + str(self.image.shape[1])
@@ -182,6 +183,33 @@ def filter_cells(cells, q):
     return cells, filtered
 
         
+# add flipped horizontal/vertical, rotated 90, 180, 270 cells (counterclockwise)
+#
+# param: cells (list of Cells)
+def augment_cells(cells):
+    for i in range(len(cells)):
+        # get Cell info
+        value = cells[i].value
+        image = cells[i].image
+        activation = cells[i].activation
+        filename = cells[i].filename
+        
+        # flip horizontal
+        cells.append(Cell(value, np.fliplr(image), activation, filename, "fh"))
+        
+        # flip vertical
+        cells.append(Cell(value, np.flipud(image), activation, filename, "fv"))
+        
+        # rotate 90
+        cells.append(Cell(value, np.rot90(image), activation, filename, "r90"))
+        
+        # rotate 180
+        cells.append(Cell(value, np.rot90(image, k=2), activation, filename, "r180"))
+
+        # rotate 270
+        cells.append(Cell(value, np.rot90(image, k=3), activation, filename, "r270"))
+
+
 # save cells to folder and make csv of cells
 #
 # param: cells (list of Cells)
@@ -195,8 +223,8 @@ def save_cells(cells, output):
     with open(output + "/labels.csv", "w") as labels:
         labels.write("cell_image, cell_label\n")
         for cell in cells:
-            tiff.imwrite(output + "/{}_cell{}.tif".format(cell.filename, str(cell.value)), cell.image)
-            labels.write("{}_cell{}.tif, {}\n".format(cell.filename, str(cell.value), cell.activation))
+            tiff.imwrite(output + "/{}_cell{}_{}.tif".format(cell.filename, str(cell.value), cell.augmentation), cell.image)
+            labels.write("{}_cell{}_{}.tif, {}\n".format(cell.filename, str(cell.value), cell.augmentation, cell.activation))
 
 
 
@@ -207,7 +235,7 @@ def save_cells(cells, output):
 print("start cropping...")
 all_cells = []
 
-for file in glob("Images/*.sdt"):
+for file in glob("Images/D1-3/*.sdt"):
     cells = split_sdt(file, file.replace(".sdt",".tif"))
     
     for cell in cells:
@@ -225,7 +253,7 @@ pad_cells(all_cells, size)
 print("finish padding...")
 
 # filter cells
-print("start filtering")
+print("start filtering...")
 active = [cell for cell in all_cells if cell.activation is True]
 quiescent = [cell for cell in all_cells if cell.activation is False]
 
@@ -250,9 +278,14 @@ quiescent_split_ind = math.floor((len(quiescent) / 5))
 test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
 train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
-    
+# augment
+print("start augmenting...")
+augment_cells(test)
+augment_cells(train)
+print("end augmenting...")    
+
 # save to folders
-print("start saving")
+print("start saving...")
 save_cells(test, "Images/Test")
 save_cells(train, "Images/Train")
 print("completed")
