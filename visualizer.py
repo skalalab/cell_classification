@@ -21,13 +21,13 @@ def visualize_sdt(file):
     # visualize
     if data.ndim == 3:
         plt.imshow(np.sum(data, axis = 2)) 
-        plt.title(file)
+        plt.title(Path(file).name)
         plt.show()
         
     elif data.ndim == 4:
         for i in range(data.shape[0]):
             plt.imshow(np.sum(data[i], axis = 2))
-            plt.title("{}: {}".format(file, str(i)))
+            plt.title("{}: {}".format(Path(file).name, str(i)))
             plt.show()
             
     return data[0]
@@ -51,5 +51,7 @@ def visualize_array(array, title, need_sum=True):
     plt.title(title)
     plt.show()
 
+for file in glob("Images/D1-3/SDT/*.sdt"):
+    visualize_sdt(file)
         
         

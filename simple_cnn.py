@@ -21,6 +21,8 @@ import tifffile as tiff
 import numpy as np
 from torchvision.transforms import ToTensor
 
+device = torch.device("cuda")
+
 class CellDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform):
         self.img_labels = pd.read_csv(annotations_file)
@@ -39,16 +41,17 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 1
+n_epochs = 5
 batch_size_train = 4
 batch_size_test = 20    
 learning_rate = 0.001
-log_interval = 1
+log_interval = 20
 
 
-random_seed = 2
-torch.backends.cudnn.deterministic = True
-torch.manual_seed(random_seed)
+# random_seed = 2
+# torch.backends.cudnn.deterministic = True
+# torch.manual_seed(random_seed)
+torch.backends.cudnn.benchmark = True
 
 train_annotations = "Images/Train/labels.csv"
 train_dir = "Images/Train"
@@ -83,18 +86,19 @@ count = Counter(0 if 'quiescent' in training_csv.iloc[row, 0] else 1
                      for row in range(1, training_csv.shape[0]))
 
 if count[1] > count[0]:
-    class_weight = torch.tensor([count[1]/count[0], 1])
+    class_weight = torch.tensor([count[1]/count[0], 1]).to(device)
 else:
-    class_weight = torch.tensor([1, count[0]/count[1]])
+    class_weight = torch.tensor([1, count[0]/count[1]]).to(device)
+
 
 #%%
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv3d(1, 32, kernel_size=(16,2,2))
-        self.conv2 = nn.Conv3d(32, 32, kernel_size=(4,2,2))
-        self.fc1 = nn.Linear(114688, 120)
-        self.fc2 = nn.Linear(120, 2)
+        self.conv1 = nn.Conv3d(1, 64, kernel_size=(16,2,2))
+        self.conv2 = nn.Conv3d(64, 64, kernel_size=(4,2,2))
+        self.fc1 = nn.Linear(229376, 256)
+        self.fc2 = nn.Linear(256, 2)
         
     def forward(self, x):
         x = self.conv1(x)
@@ -108,11 +112,12 @@ class SimpleCNN(nn.Module):
     
 
     
-simple_cnn = SimpleCNN()
+simple_cnn = SimpleCNN().to(device)
 optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
-train_losses = []
-train_counter = []
+
+# train_losses = []
+# train_counter = []
 # test_losses = []
 # test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
@@ -120,10 +125,10 @@ def train(epoch):
     simple_cnn.train()
     
     for batch_idx, (data, target) in enumerate(train_loader):
+        data = data.to(device)
+        target = target.to(device)
         optimizer.zero_grad()
         output = simple_cnn(data)
-        print(target)
-        print(output)
         loss = F.nll_loss(output, target, weight=class_weight)
         loss.backward()
         optimizer.step()
@@ -131,8 +136,8 @@ def train(epoch):
         if batch_idx % log_interval == 0:
             print("epoch {}: {}/{}: {}".format(epoch+1, (batch_idx+1) * len(data), 
                 len(train_loader.dataset), loss.item()))
-            train_losses.append(loss.item())
-            train_counter.append(((batch_idx+1)*batch_size_train))
+            # train_losses.append(loss.item())
+            # train_counter.append(((batch_idx+1)*batch_size_train))
             
 #%%
 def test():
@@ -141,7 +146,9 @@ def test():
     correct = 0
     
     with torch.no_grad():
-        for data, target in test_loader:   
+        for batch_idx, (data, target) in enumerate(test_loader):   
+            data = data.to(device)
+            target = target.to(device)
             output = simple_cnn(data)
             test_loss += F.nll_loss(output, target, weight=class_weight, reduction="sum").item()
             pred = output.data.max(1, keepdim=True)[1]
@@ -152,16 +159,17 @@ def test():
     print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
 #%%
 
+test()
 for i in range(n_epochs):
     train(i)    
     test()
 
-fig = plt.figure()
-plt.plot(train_counter, train_losses, color='blue')
+# fig = plt.figure()
+# plt.plot(train_counter, train_losses, color='blue')
 # plt.scatter(test_counter, test_losses, color='red')
 # plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
-plt.xlabel('number of training examples seen')
-plt.ylabel('negative log likelihood loss')
-fig
+# plt.xlabel('number of training examples seen')
+# plt.ylabel('negative log likelihood loss')
+# fig
         
         
