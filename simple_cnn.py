@@ -41,11 +41,11 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 5
-batch_size_train = 4
+n_epochs = 50
+batch_size_train = 8
 batch_size_test = 20    
 learning_rate = 0.001
-log_interval = 20
+log_interval = 12
 
 
 # random_seed = 2
@@ -95,19 +95,18 @@ else:
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv3d(1, 64, kernel_size=(16,2,2))
-        self.conv2 = nn.Conv3d(64, 64, kernel_size=(4,2,2))
-        self.fc1 = nn.Linear(229376, 256)
-        self.fc2 = nn.Linear(256, 2)
+        self.conv1 = nn.Conv3d(1, 32, kernel_size=(16,7,7), stride=2)
+        self.conv2 = nn.Conv3d(32, 64, kernel_size=(4,2,2))
+        self.fc1 = nn.Linear(64, 2)
         
     def forward(self, x):
         x = self.conv1(x)
         x = F.leaky_relu(F.max_pool3d(x, (4,2,2)))
         x = self.conv2(x)
         x = F.leaky_relu(F.max_pool3d(x, (4,2,2)))
+        x = F.avg_pool3d(x, kernel_size=(6,7,7))
         x = x.flatten(1)
         x = F.leaky_relu(self.fc1(x))
-        x = F.leaky_relu(self.fc2(x))
         return F.log_softmax(x, -1)
     
 
@@ -118,7 +117,7 @@ optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
 
 # train_losses = []
 # train_counter = []
-# test_losses = []
+# test_acc = []
 # test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
 def train(epoch):
@@ -155,7 +154,7 @@ def test():
             correct += pred.eq(target.data.view_as(pred)).sum()
        
     test_loss /= len(test_loader.dataset)
-    # test_losses.append(test_loss)
+    # test_acc.append(100. * correct / len(test_loader.dataset))
     print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
 #%%
 
@@ -164,12 +163,9 @@ for i in range(n_epochs):
     train(i)    
     test()
 
-# fig = plt.figure()
 # plt.plot(train_counter, train_losses, color='blue')
-# plt.scatter(test_counter, test_losses, color='red')
-# plt.legend(['Train Loss', 'Test Loss'], loc='upper right')
-# plt.xlabel('number of training examples seen')
-# plt.ylabel('negative log likelihood loss')
-# fig
+# plt.show()
+# plt.scatter(test_counter, test_acc, color='red')
+# plt.show()
         
         
