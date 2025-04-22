@@ -5,7 +5,6 @@ Created on Fri Mar  7 14:48:39 2025
 @author: chris
 """
 
-#%%
 import torch
 import torchvision
 import torch.nn as nn
@@ -22,6 +21,8 @@ import numpy as np
 from torchvision.transforms import ToTensor
 
 device = torch.device("cuda")
+torch.backends.cudnn.benchmark = True
+
 
 class CellDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform):
@@ -41,48 +42,30 @@ class CellDataset(Dataset):
         label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
         return image, label
     
-n_epochs = 50
+n_epochs = 100
 batch_size_train = 8
 batch_size_test = 20    
 learning_rate = 0.001
 log_interval = 12
 
-
-# random_seed = 2
-# torch.backends.cudnn.deterministic = True
-# torch.manual_seed(random_seed)
-torch.backends.cudnn.benchmark = True
-
 train_annotations = "Images/Train/labels.csv"
 train_dir = "Images/Train"
 test_annotations = "Images/Test/labels.csv"
 test_dir = "Images/Test"
+validate_annotations = "Images/Validate/labels.csv"
+validate_dir = "Images/Validate"
+
 
 train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_dir, ToTensor()),
                                            batch_size=batch_size_train, shuffle=True)
 test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir, ToTensor()),
                                           batch_size=batch_size_test, shuffle=False)
+validate_loader = torch.utils.data.DataLoader(CellDataset(validate_annotations, validate_dir, ToTensor()),
+                                           batch_size=batch_size_test, shuffle=True)
 
-#%%       
-# examples = enumerate(test_loader)
-# batch_idx, (example_data, example_targets) = next(examples)
-# fig = plt.figure()
-
-# for i in range(6):
-#     plt.subplot(2,3, i+1)
-#     plt.tight_layout()
-    
-#     example_img = example_data[i][0]
-#     example_img = torch.swapaxes(example_img, 0, 2)
-#     example_img = torch.swapaxes(example_img, 0, 1)
-    
-#     plt.imshow(torch.sum(example_img, 2))
-#     plt.title("Ground Truth: {}".format(example_targets[i]))
-
-# plt.show(fig)
 
 training_csv = pd.read_csv(train_annotations)
-count = Counter(0 if 'quiescent' in training_csv.iloc[row, 0] else 1
+count = Counter(0 if 'in' in training_csv.iloc[row, 0] else 1
                      for row in range(1, training_csv.shape[0]))
 
 if count[1] > count[0]:
@@ -91,7 +74,6 @@ else:
     class_weight = torch.tensor([1, count[0]/count[1]]).to(device)
 
 
-#%%
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
@@ -104,43 +86,77 @@ class SimpleCNN(nn.Module):
         x = F.leaky_relu(F.max_pool3d(x, (4,2,2)))
         x = self.conv2(x)
         x = F.leaky_relu(F.max_pool3d(x, (4,2,2)))
+        
+        # global averaging pool
         x = F.avg_pool3d(x, kernel_size=(6,7,7))
+        
         x = x.flatten(1)
         x = F.leaky_relu(self.fc1(x))
         return F.log_softmax(x, -1)
     
 
-    
-simple_cnn = SimpleCNN().to(device)
-optimizer = optim.Adam(simple_cnn.parameters(), lr=learning_rate)
+class EarlyStopper:
+    def __init__(self, patience, min_delta):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = float('inf')
+
+    def validate(self, validation_loss):
+        if self.best_loss - validation_loss > self.min_delta:
+            self.counter = 0
+            self.best_loss = validation_loss
+
+            return False
+        else:
+            self.counter += 1
+
+            if self.counter >= self.patience:
+                return True
 
 
-# train_losses = []
-# train_counter = []
-# test_acc = []
-# test_counter = [[i*len(train_loader.dataset) for i in range(n_epochs + 1)]]
 
 def train(epoch):
-    simple_cnn.train()
-    
+    # train one epoch
+    model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
+        # transfer data tensors to GPU
         data = data.to(device)
         target = target.to(device)
+        
+        # gradient descent and backpropagation
         optimizer.zero_grad()
-        output = simple_cnn(data)
+        output = model(data)
         loss = F.nll_loss(output, target, weight=class_weight)
         loss.backward()
         optimizer.step()
     
-        if batch_idx % log_interval == 0:
-            print("epoch {}: {}/{}: {}".format(epoch+1, (batch_idx+1) * len(data), 
-                len(train_loader.dataset), loss.item()))
-            # train_losses.append(loss.item())
-            # train_counter.append(((batch_idx+1)*batch_size_train))
+        # output stats
+        # if batch_idx % log_interval == 0:
+        #     print("epoch {}: {}/{}: {}".format(epoch+1, (batch_idx+1) * len(data), 
+        #         len(train_loader.dataset), loss.item()))
             
-#%%
+
+def validate(early_stopper):
+    model.eval()
+    validation_loss = 0
+    
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(validate_loader):
+            data = data.to(device)
+            target = target.to(device)
+            output = model(data)
+            validation_loss += F.nll_loss(output, target, weight=class_weight, reduction="sum").item()
+    
+    validation_loss /= len(validate_loader.dataset)
+    
+    return early_stopper.validate(validation_loss), validation_loss
+
+
+        
+            
 def test():
-    simple_cnn.eval()
+    model.eval()
     test_loss = 0
     correct = 0
     
@@ -148,24 +164,32 @@ def test():
         for batch_idx, (data, target) in enumerate(test_loader):   
             data = data.to(device)
             target = target.to(device)
-            output = simple_cnn(data)
+            output = model(data)
             test_loss += F.nll_loss(output, target, weight=class_weight, reduction="sum").item()
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).sum()
        
     test_loss /= len(test_loader.dataset)
-    # test_acc.append(100. * correct / len(test_loader.dataset))
-    print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
-#%%
+    print('Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
+    return 'Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset))
 
-test()
-for i in range(n_epochs):
-    train(i)    
-    test()
 
-# plt.plot(train_counter, train_losses, color='blue')
-# plt.show()
-# plt.scatter(test_counter, test_acc, color='red')
-# plt.show()
-        
+# train the model
+model = SimpleCNN().to(device)
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+early_stopper = EarlyStopper(5, 0.0)
+
+with open("output.txt", "w") as output:
+    output.write(test())
+    for i in range(n_epochs):
+        train(i)    
+        output.write(test())
+
+        stop_early, validation_loss = validate(early_stopper)
+        output.write("Validation Loss: " + str(validation_loss) + "\n")
+        output.write("Counter:" + str(early_stopper.counter) + "\n")
+
+        if stop_early:
+            output.write("Stopped Early...")
+            break;        
         

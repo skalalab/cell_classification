@@ -235,7 +235,7 @@ def save_cells(cells, output):
 print("start cropping...")
 all_cells = []
 
-for file in glob("Images/D1-3/*.sdt"):
+for file in glob("Images/Sample_Set/*.sdt"):
     cells = split_sdt(file, file.replace(".sdt",".tif"))
     
     for cell in cells:
@@ -278,6 +278,10 @@ quiescent_split_ind = math.floor((len(quiescent) / 5))
 test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
 train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
 
+random.shuffle(train)
+validate = train[:math.floor((len(train) / 4))]
+train = train[math.floor((len(train) / 4)):]
+
 # augment
 print("start augmenting...")
 augment_cells(test)
@@ -288,4 +292,5 @@ print("end augmenting...")
 print("start saving...")
 save_cells(test, "Images/Test")
 save_cells(train, "Images/Train")
+save_cells(validate, "Images/Validate")
 print("completed")

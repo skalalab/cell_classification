@@ -51,7 +51,7 @@ def visualize_array(array, title, need_sum=True):
     plt.title(title)
     plt.show()
 
-for file in glob("Images/D1-3/SDT/*.sdt"):
-    visualize_sdt(file)
+# for file in glob("Images/D6/SDT/*.sdt"):
+#     visualize_sdt(file)
         
         
