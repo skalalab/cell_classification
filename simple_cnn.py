@@ -20,60 +20,26 @@ import tifffile as tiff
 import numpy as np
 from torchvision.transforms import ToTensor
 
-device = torch.device("cuda")
-torch.backends.cudnn.benchmark = True
-
-
 class CellDataset(Dataset):
-    def __init__(self, annotations_file, img_dir, transform):
-        self.img_labels = pd.read_csv(annotations_file)
-        self.img_dir = img_dir
+    def __init__(self, img_list, transform):
+        self.img_list = img_list
         self.transform = transform
         
     def __len__(self):
-        return len(self.img_labels)
+        return len(self.img_list)
     
     def __getitem__(self, idx):
-        img_path = self.img_dir + "/" + self.img_labels.iloc[idx, 0]
+        donor = img_list[idx].split("\\")[1][:2]
+        img_path = "Images/{}_Cells/".format(donor) + self.img_list[idx]
         
         with tiff.TiffFile(img_path) as tif:
             image = self.transform(tif.asarray().astype(np.uint8)).unsqueeze(0)
             
-        label = 1 if self.img_labels.iloc[idx, 1].strip() == "True" else 0
+        label = 1 if "act" in self.img_list[idx] else 0
         return image, label
+
+
     
-n_epochs = 100
-batch_size_train = 8
-batch_size_test = 20    
-learning_rate = 0.001
-log_interval = 12
-
-train_annotations = "Images/Train/labels.csv"
-train_dir = "Images/Train"
-test_annotations = "Images/Test/labels.csv"
-test_dir = "Images/Test"
-validate_annotations = "Images/Validate/labels.csv"
-validate_dir = "Images/Validate"
-
-
-train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_dir, ToTensor()),
-                                           batch_size=batch_size_train, shuffle=True)
-test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir, ToTensor()),
-                                          batch_size=batch_size_test, shuffle=False)
-validate_loader = torch.utils.data.DataLoader(CellDataset(validate_annotations, validate_dir, ToTensor()),
-                                           batch_size=batch_size_test, shuffle=True)
-
-
-training_csv = pd.read_csv(train_annotations)
-count = Counter(0 if 'in' in training_csv.iloc[row, 0] else 1
-                     for row in range(1, training_csv.shape[0]))
-
-if count[1] > count[0]:
-    class_weight = torch.tensor([count[1]/count[0], 1]).to(device)
-else:
-    class_weight = torch.tensor([1, count[0]/count[1]]).to(device)
-
-
 class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
@@ -130,11 +96,6 @@ def train(epoch):
         loss = F.nll_loss(output, target, weight=class_weight)
         loss.backward()
         optimizer.step()
-    
-        # output stats
-        # if batch_idx % log_interval == 0:
-        #     print("epoch {}: {}/{}: {}".format(epoch+1, (batch_idx+1) * len(data), 
-        #         len(train_loader.dataset), loss.item()))
             
 
 def validate(early_stopper):
@@ -153,8 +114,6 @@ def validate(early_stopper):
     return early_stopper.validate(validation_loss), validation_loss
 
 
-        
-            
 def test():
     model.eval()
     test_loss = 0
@@ -171,25 +130,77 @@ def test():
        
     test_loss /= len(test_loader.dataset)
     print('Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
-    return 'Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset))
+    return 'Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset))  
+  
 
 
-# train the model
-model = SimpleCNN().to(device)
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-early_stopper = EarlyStopper(5, 0.0)
+# set up cuda
+device = torch.device("cuda")
+torch.backends.cudnn.benchmark = True  
+  
+# configurations
+n_epochs = 100
+batch_size_train = 8
+learning_rate = 0.001
 
-with open("output.txt", "w") as output:
-    output.write(test())
-    for i in range(n_epochs):
-        train(i)    
+# load all the cell names
+all_cells = []
+
+for i in range(1, 7):
+    with open("Images/D{}_Cells/originals.txt".format(i)) as file:
+        cells = []
+        for line in file:
+            cells.append(line[:-1])
+            
+    random.shuffle(cells)
+    all_cells.append(cells)
+
+
+# inner loop cross-fold validation
+all_donors = [1,2,3,5,6]
+
+for validation_donor in donors:
+    train_donors = all_donors.copy()
+    train_donors.remove(validation_donor)
+    
+    train_cells = []
+    for train_donor in train_donors:
+        train_cells.append(all_cells[train_donor])
+
+    test_list = all_cells[validation_donor]
+    
+
+    train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_dir, ToTensor()),
+                                               batch_size=batch_size_train, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir, ToTensor()),
+                                              batch_size=100, shuffle=True)
+    validate_loader = torch.utils.data.DataLoader(CellDataset(validate_annotations, validate_dir, ToTensor()),
+                                               batch_size=100, shuffle=True)
+    
+    # class weights
+    count = Counter(0 if 'in' in cell_name for cell_name in train_list else 1)
+    
+    if count[1] > count[0]:
+        class_weight = torch.tensor([count[1]/count[0], 1]).to(device)
+    else:
+        class_weight = torch.tensor([1, count[0]/count[1]]).to(device)
+    
+    # train the model
+    model = SimpleCNN().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    early_stopper = EarlyStopper(10, 0.0)
+    
+    with open("output.txt", "w") as output:
         output.write(test())
-
-        stop_early, validation_loss = validate(early_stopper)
-        output.write("Validation Loss: " + str(validation_loss) + "\n")
-        output.write("Counter:" + str(early_stopper.counter) + "\n")
-
-        if stop_early:
-            output.write("Stopped Early...")
-            break;        
+        for i in range(n_epochs):
+            train(i)    
+            output.write(test())
+    
+            stop_early, validation_loss = validate(early_stopper)
+            output.write("Validation Loss: " + str(validation_loss) + "\n")
+            output.write("Counter:" + str(early_stopper.counter) + "\n")
+    
+            if stop_early:
+                output.write("Stopped Early...")
+                break;        
         

@@ -220,28 +220,31 @@ def save_cells(cells, output):
         os.makedirs(output)
         
     # make label csv
-    with open(output + "/labels.csv", "w") as labels:
-        labels.write("cell_image, cell_label\n")
+    with open(output + "/originals.txt", "w") as labels:
         for cell in cells:
             tiff.imwrite(output + "/{}_cell{}_{}.tif".format(cell.filename, str(cell.value), cell.augmentation), cell.image)
-            labels.write("{}_cell{}_{}.tif, {}\n".format(cell.filename, str(cell.value), cell.augmentation, cell.activation))
+            
+            if cell.augmentation == "no":
+                labels.write("{}_cell{}_no.tif\n".format(cell.filename, str(cell.value)))
 
 
 
 
 # now run the program
+donor = "D4"
 
 # crop all cells
 print("start cropping...")
 all_cells = []
 
-for file in glob("Images/Sample_Set/*.sdt"):
-    cells = split_sdt(file, file.replace(".sdt",".tif"))
+for file in glob("Images/{}/Use/*.sdt".format(donor)):
+    cells = split_sdt(file, file.replace("Use", "Mask").replace(".sdt",".tif"))
     
     for cell in cells:
         all_cells.append(cell)
 
 print("finish cropping...")
+
 # remove i largest cells
 print("start removing...")
 all_cells, size = remove_largest_cells(all_cells, 0)
@@ -259,38 +262,23 @@ quiescent = [cell for cell in all_cells if cell.activation is False]
 
 active, filtered = filter_cells(active, 0.1)
 
-for cell in filtered:
-    visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
+# for cell in filtered:
+#     visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
     
 quiescent, filtered = filter_cells(quiescent, 0.1)
 
-for cell in filtered:
-    visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
+# for cell in filtered:
+#     visualizer.visualize_array(cell.image, "{}_cell{}".format(cell.filename, str(cell.value)))
+
 print("finish filtering...")
-# split into test/train
-random.seed(10)
-random.shuffle(active)
-random.shuffle(quiescent)
-
-active_split_ind = math.floor((len(active) / 5))
-quiescent_split_ind = math.floor((len(quiescent) / 5))
-
-test = active[:active_split_ind] + quiescent[:quiescent_split_ind]
-train = active[active_split_ind:] + quiescent[quiescent_split_ind:]
-
-random.shuffle(train)
-validate = train[:math.floor((len(train) / 4))]
-train = train[math.floor((len(train) / 4)):]
 
 # augment
-print("start augmenting...")
-augment_cells(test)
-augment_cells(train)
-print("end augmenting...")    
+# print("start augmenting...")
+# augment_cells(active)
+# augment_cells(quiescent)
+# print("end augmenting...")    
 
 # save to folders
 print("start saving...")
-save_cells(test, "Images/Test")
-save_cells(train, "Images/Train")
-save_cells(validate, "Images/Validate")
+save_cells(active+quiescent, "Images/{}_Cells".format(donor))
 print("completed")
