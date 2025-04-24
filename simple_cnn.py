@@ -12,13 +12,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import random
-from collections import Counter
 
+import math
 from torch.utils.data import Dataset
 import pandas as pd
 import tifffile as tiff
 import numpy as np
 from torchvision.transforms import ToTensor
+from torcheval.metrics.functional import binary_auprc
 
 class CellDataset(Dataset):
     def __init__(self, img_list, transform):
@@ -29,7 +30,7 @@ class CellDataset(Dataset):
         return len(self.img_list)
     
     def __getitem__(self, idx):
-        donor = img_list[idx].split("\\")[1][:2]
+        donor = self.img_list[idx][:2]
         img_path = "Images/{}_Cells/".format(donor) + self.img_list[idx]
         
         with tiff.TiffFile(img_path) as tif:
@@ -82,7 +83,7 @@ class EarlyStopper:
 
 
 
-def train(epoch):
+def train(device, model, optimizer, train_loader, weight):
     # train one epoch
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -93,55 +94,59 @@ def train(epoch):
         # gradient descent and backpropagation
         optimizer.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target, weight=class_weight)
+        loss = F.nll_loss(output, target, weight=weight)
         loss.backward()
         optimizer.step()
             
 
-def validate(early_stopper):
+def validate(device, model, early_stopper, validation_loader, weight):
     model.eval()
     validation_loss = 0
     
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(validate_loader):
+        for batch_idx, (data, target) in enumerate(validation_loader):
             data = data.to(device)
             target = target.to(device)
             output = model(data)
-            validation_loss += F.nll_loss(output, target, weight=class_weight, reduction="sum").item()
+            validation_loss += F.nll_loss(output, target, weight=weight, reduction="sum").item()
     
-    validation_loss /= len(validate_loader.dataset)
+    validation_loss /= len(validation_loader.dataset)
     
     return early_stopper.validate(validation_loss), validation_loss
 
 
-def test():
+def test(device, model, test_loader, weight):
     model.eval()
     test_loss = 0
     correct = 0
+    true_positives = 0
+    false_positives = 0
     
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(test_loader):   
+        for data, target in test_loader:   
             data = data.to(device)
             target = target.to(device)
             output = model(data)
-            test_loss += F.nll_loss(output, target, weight=class_weight, reduction="sum").item()
+            
+            # get loss
+            test_loss = F.nll_loss(output, target, weight=weight, reduction="mean").item()
+            
+            # get accuracy
             pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).sum()
-       
-    test_loss /= len(test_loader.dataset)
-    print('Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset)))
-    return 'Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),100. * correct / len(test_loader.dataset))  
-  
+            truth = target.data.view_as(pred)
+            accuracy = pred.eq(truth).sum() / len(test_loader.dataset)
+
+            # get average precision
+            average_precision = binary_auprc(pred, truth).item()
+            
+    
+    return {"acc": accuracy, "ap": average_precision}
+    
 
 
 # set up cuda
 device = torch.device("cuda")
 torch.backends.cudnn.benchmark = True  
-  
-# configurations
-n_epochs = 100
-batch_size_train = 8
-learning_rate = 0.001
 
 # load all the cell names
 all_cells = []
@@ -152,55 +157,90 @@ for i in range(1, 7):
         for line in file:
             cells.append(line[:-1])
             
-    random.shuffle(cells)
     all_cells.append(cells)
 
 
-# inner loop cross-fold validation
+# start the training
+n_epochs = 100
 all_donors = [1,2,3,5,6]
+batch_sizes = [4,8,16,32]
+learning_rates = [0.0001, 0.001, 0.01, 0.1]
+results = []
 
-for validation_donor in donors:
-    train_donors = all_donors.copy()
-    train_donors.remove(validation_donor)
-    
-    train_cells = []
-    for train_donor in train_donors:
-        train_cells.append(all_cells[train_donor])
-
-    test_list = all_cells[validation_donor]
-    
-
-    train_loader = torch.utils.data.DataLoader(CellDataset(train_annotations, train_dir, ToTensor()),
-                                               batch_size=batch_size_train, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(CellDataset(test_annotations, test_dir, ToTensor()),
-                                              batch_size=100, shuffle=True)
-    validate_loader = torch.utils.data.DataLoader(CellDataset(validate_annotations, validate_dir, ToTensor()),
-                                               batch_size=100, shuffle=True)
-    
-    # class weights
-    count = Counter(0 if 'in' in cell_name for cell_name in train_list else 1)
-    
-    if count[1] > count[0]:
-        class_weight = torch.tensor([count[1]/count[0], 1]).to(device)
-    else:
-        class_weight = torch.tensor([1, count[0]/count[1]]).to(device)
-    
-    # train the model
-    model = SimpleCNN().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    early_stopper = EarlyStopper(10, 0.0)
-    
-    with open("output.txt", "w") as output:
-        output.write(test())
-        for i in range(n_epochs):
-            train(i)    
-            output.write(test())
-    
-            stop_early, validation_loss = validate(early_stopper)
-            output.write("Validation Loss: " + str(validation_loss) + "\n")
-            output.write("Counter:" + str(early_stopper.counter) + "\n")
-    
-            if stop_early:
-                output.write("Stopped Early...")
-                break;        
+# outer loops is hyperparameter grid search
+for learning_rate in learning_rates:
+    for batch_size_train in batch_sizes:
         
+        # inner loops is four-fold cross validation
+        for test_donor in all_donors:
+            donors = all_donors.copy()
+            donors.remove(test_donor)
+            mean_ap = 0
+            mean_acc = 0
+            
+            for validation_donor in donors:
+                train_donors = donors.copy()
+                train_donors.remove(validation_donor)
+                
+                 # get train/test/validation sets
+                test_set = all_cells[validation_donor]
+            
+                train_cells = []
+                for donor in train_donors:
+                    train_cells.append(all_cells[donor])    
+            
+                random.shuffle(train_cells)
+                
+                validation_set = train_cells[:math.floor(len(train_cells) / 4)]
+            
+                train_set = []
+                for i in range(math.floor(len(train_cells) / 4), len(train_cells)):
+                    original_cell = train_cells[i]
+                    train_cells.append(original_cell)
+                    train_cells.append(original_cell.replace("no", "fh"))
+                    train_cells.append(original_cell.replace("no", "fv"))
+                    train_cells.append(original_cell.replace("no", "r90"))
+                    train_cells.append(original_cell.replace("no", "r180"))
+                    train_cells.append(original_cell.replace("no", "r270"))
+                
+                # load data into dataloader
+                train_loader = torch.utils.data.DataLoader(CellDataset(train_set, ToTensor()),
+                                                           batch_size=batch_size_train, shuffle=True)
+                test_loader = torch.utils.data.DataLoader(CellDataset(test_set, ToTensor()),
+                                                          batch_size=len(test_set), shuffle=True)
+                validation_loader = torch.utils.data.DataLoader(CellDataset(validation_set, ToTensor()),
+                                                           batch_size=len(validation_set), shuffle=True)
+            
+                # class weights
+                active_count = 0
+                quiescent_count = 0
+                for cell in train_set:
+                    if "act" in cell:
+                        active_count += 1
+                    else:
+                        quiescent_count += 1
+                    
+                if active_count > quiescent_count:
+                    class_weight = torch.tensor([active_count/quiescent_count, 1]).to(device)
+                else:
+                    class_weight = torch.tensor([1, quiescent_count/active_count]).to(device)
+                
+                # train the model
+                model = SimpleCNN().to(device)
+                optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+                early_stopper = EarlyStopper(10, 0.0)
+                
+                for i in range(n_epochs):
+                    train(device, model, optimizer, train_loader, class_weight)    
+                    stop_early, validation_loss = validate(device, model, early_stopper, validation_loader, class_weight)    
+                
+                    if stop_early:
+                        break;
+                        
+                result = test(device, model, test_loader, class_weight)
+                mean_ap += result["ap"]
+                mean_acc += result["acc"]
+                
+            # mean average precision    
+            mean_ap /= 4
+            mean_acc /= 4
