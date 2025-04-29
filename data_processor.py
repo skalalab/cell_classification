@@ -231,7 +231,7 @@ def save_cells(cells, output):
 
 
 # now run the program
-donor = "D4"
+donor = "D6"
 
 # crop all cells
 print("start cropping...")
@@ -245,14 +245,14 @@ for file in glob("Images/{}/Use/*.sdt".format(donor)):
 
 print("finish cropping...")
 
-# remove i largest cells
-print("start removing...")
-all_cells, size = remove_largest_cells(all_cells, 0)
-print("finish removing... size: " + str(size))
+# # remove i largest cells
+# print("start removing...")
+# all_cells, size = remove_largest_cells(all_cells, 0)
+# print("finish removing... size: " + str(size))
 
 # pad cells
 print("start padding...")
-pad_cells(all_cells, size)
+pad_cells(all_cells, 82)
 print("finish padding...")
 
 # filter cells
@@ -273,10 +273,10 @@ quiescent, filtered = filter_cells(quiescent, 0.1)
 print("finish filtering...")
 
 # augment
-# print("start augmenting...")
-# augment_cells(active)
-# augment_cells(quiescent)
-# print("end augmenting...")    
+print("start augmenting...")
+augment_cells(active)
+augment_cells(quiescent)
+print("end augmenting...")    
 
 # save to folders
 print("start saving...")
