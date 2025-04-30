@@ -94,7 +94,6 @@ def train(device, model, optimizer, train_loader, weight):
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target, weight=weight)
-        print(str(batch_idx) + ": " + str(loss.item()))
         loss.backward()
         optimizer.step()
             
@@ -120,23 +119,29 @@ def validate(device, model, early_stopper, early_loader, weight):
 def test(device, model, test_loader, weight):
     model.eval()
     
+    total_pred = torch.tensor([]).type(torch.int64).to(device)
+    total_truth = torch.tensor([]).type(torch.int64).to(device)
+    count = 0
+    loss = 0
     with torch.no_grad():
         for data, target in test_loader:   
             data = data.to(device)
             target = target.to(device)
             output = model(data)
             
-            # get stats
-            pred = output.data.max(1, keepdim=True)[1]
-            truth = target.data.view_as(pred)
-
-            test_loss = F.nll_loss(output, target, weight=weight, reduction="sum").item()
+            pred = torch.swapaxes(output.data.max(1, keepdim=True)[1], 0, 1)[0].to(device)
+            truth = target.data.view_as(pred).to(device)
+            total_pred = torch.cat((total_pred, pred))
+            total_truth = torch.cat((total_truth, truth))
+            count += pred.eq(truth).sum().item()
+            loss += F.nll_loss(output, target, weight=weight, reduction="sum").item()
             
-            accuracy = binary_accuracy(pred, truth).item()
-            test_accuracy = pred.eq(truth).sum() / len(target)
-            assert accuracy == test_accuracy
+    test_loss = loss / len(test_loader.dataset)
+    accuracy = binary_accuracy(total_pred, total_truth).item()
+    test_accuracy = count / len(test_loader.dataset)
+    assert round(accuracy, 3) == round(test_accuracy, 3), f"acc: {accuracy}, test: {test_accuracy}"
 
-            average_precision = binary_auprc(pred, truth).item()
+    average_precision = binary_auprc(total_pred, total_truth).item()
             
     
     return {"loss": test_loss, "acc": accuracy, "ap": average_precision}
@@ -163,7 +168,7 @@ for i in range(1, 7):
 
 
 # start the training
-n_epochs = 5
+n_epochs = 1
 all_donors = [1,2,3,5,6]
 # batch_sizes = [4,8,16,32]
 # learning_rates = [0.0001, 0.001, 0.01, 0.1]
@@ -210,10 +215,14 @@ for test_donor in all_donors:
         train_loader = torch.utils.data.DataLoader(CellDataset(train_set, ToTensor()),
                                                    batch_size=batch_size_train, shuffle=True)
         validation_loader = torch.utils.data.DataLoader(CellDataset(validation_set, ToTensor()),
-                                                  batch_size=batch_size_train, shuffle=True)
+                                                  batch_size=100, shuffle=True)
         early_loader = torch.utils.data.DataLoader(CellDataset(early_set, ToTensor()),
-                                                   batch_size=batch_size_train, shuffle=True)
+                                                   batch_size=100, shuffle=True)
     
+        print(f"test: {test_donor} | valid: {validation_donor}")
+        print(len(train_loader.dataset))
+        print(len(validation_loader.dataset))
+        print(len(early_loader.dataset))
     
         # set class weights
         active_count = 0
@@ -244,20 +253,22 @@ for test_donor in all_donors:
         results = test(device, model, validation_loader, class_weight)
         model_results.append({"valid_donor": validation_donor, "results": results})
         
+        
+        
     # get the average of stats  
     mean_acc = 0 
     mean_ap = 0
     mean_loss = 0
     for model in model_results:
-        print(str(test_donor) + " | " + str(model["valid_donor"]) + ": " + results)
-        mean_acc += model["acc"]
-        mean_ap += model["ap"]
-        mean_loss += model["loss"]
+        print(str(test_donor) + " | " + str(model["valid_donor"]) + ": " + str(model["results"]))
+        mean_loss += model["results"]["loss"]
+        mean_acc += model["results"]["acc"]
+        mean_ap += model["results"]["ap"]
      
     
     mean_loss /= len(train_donors)
+    mean_acc /= len(train_donors)
     mean_ap /= len(train_donors)
-    mean_acc = len(train_donors)
     
-    print(f"loss: {mean_loss} | ap: {mean_ap} | acc: {mean_acc}")
+    print(str(test_donor) + f": loss: {mean_loss} | acc: {mean_acc}| ap: {mean_ap} ")
         
