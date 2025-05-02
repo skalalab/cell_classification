@@ -231,7 +231,7 @@ def save_cells(cells, output):
 
 
 # now run the program
-donor = "D6"
+donor = "D4"
 
 # crop all cells
 print("start cropping...")

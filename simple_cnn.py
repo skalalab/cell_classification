@@ -270,9 +270,8 @@ for test_donor in all_donors:
         
 # get the best model for all test donors
 best_models = {}
-print("best models:")
+print("\n\nbest models:")
 for donor in all_donors:
-    
     best_ap = 0
     best_bs = None
     best_lr = None
@@ -285,10 +284,11 @@ for donor in all_donors:
             best_lr = result["lr"]
             
     best_models[f"{donor}"] = {"bs": best_bs, "lr": best_lr}
-    print(f"{donor}: bs: {best_bs} | lr: {best_lr}")
+    print(f"donor {donor}: best batch size: {best_bs} | best learning rate: {best_lr}")
             
     
 # test the best model for each test donor
+print("\n\ntest models:")
 for test_donor in all_donors:
     # get optimal hyperparameters for this model
     hyperparameters = best_models[f"{donor}"]
@@ -328,11 +328,6 @@ for test_donor in all_donors:
     early_loader = torch.utils.data.DataLoader(CellDataset(early_set, ToTensor()),
                                                batch_size=100, shuffle=True)
 
-    # print(f"test: {test_donor} | valid: {validation_donor}")
-    # print(len(train_loader.dataset))
-    # print(len(validation_loader.dataset))
-    # print(len(early_loader.dataset))
-
     # set class weights
     active_count = 0
     quiescent_count = 0
@@ -360,4 +355,4 @@ for test_donor in all_donors:
             break;
             
     results = test(device, model, test_loader, class_weight)
-    print(str(test_donor) + ": " + str(results))
+    print(f"donor {test_donor}: " + str(results))
